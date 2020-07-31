@@ -10,6 +10,7 @@ boardBack.name = "boardBack";
 boardBack.rotation.set(-Math.PI/2, 0, 0);
 boardBack.receiveShadow = true;
 boardBack.castShadow = true;
+
 const genZone = (mode:"MONSTER"|"OTHER",x:number)=>{
     const points = [
         new THREE.Vector3( -7.5, 0, -10 ),

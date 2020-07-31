@@ -3,8 +3,40 @@ import { Tween } from 'createjs-module';
 import BoardMesh from './genBoard'
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { DragControls } from "three/examples/jsm/controls/DragControls";
+import { Object3D } from 'three';
 
 const cardSize = {x:13.5,y:18,margin:3};
+const mouseOveredMesh : {mesh:Object3D|"NoMesh"} = {mesh:"NoMesh"};
+
+class Card extends THREE.Mesh {
+    location:"MO"|"ST"|"FIELD"|"DECK"|"HAND"|"GY"|"DD";
+    constructor(geometry: THREE.Geometry | THREE.BufferGeometry,material: THREE.Material | THREE.Material[]){
+        super(geometry,material);
+        this.location = "DECK";
+    };
+};
+
+interface Interface_EventSwitch  {
+    main : boolean,
+    hopUp : boolean,
+    mouseOver : boolean,
+    click : boolean
+};
+const eventSwitch : Interface_EventSwitch = {
+    main : true,
+    hopUp : false,
+    mouseOver : true,
+    click : true
+};
+type eventKey = keyof Interface_EventSwitch;
+const event_isValid = (arg : eventKey[]) :boolean => {
+    return arg.map(k => eventSwitch[k] ).every(v => v==true );
+};
+const eventSwitch_turn = (targetArray:eventKey[], onoff:boolean) => {
+    targetArray.forEach(k=>{
+        eventSwitch[k] = onoff;
+    });
+};
 
 // ページの読み込みを待つ
 window.onload = function() {
@@ -29,9 +61,9 @@ window.onload = function() {
 
     // カメラを作成
     const camera = new THREE.PerspectiveCamera(70, width / height);
-    camera.position.set( 0, 150, 180 );
+    camera.position.set( 0, 180, 180 );
     camera.lookAt(new THREE.Vector3(0, 0, 0));
-    scene.add(camera)
+    scene.add(camera);
 
     // 光源を作成
     const light = new THREE.SpotLight(0xFFFFFF, 1, 1000, Math.PI / 4, 10, 0.1);
@@ -94,26 +126,29 @@ window.onload = function() {
             new THREE.MeshBasicMaterial({map: loader.load("cardback.jpg" )}),
         ];
         const cardGeometry = new THREE.BoxGeometry(13.5, 18, 0.01);
-        const cardMesh = new THREE.Mesh(cardGeometry,materialArray);
-
-        cardMesh.rotation.x = -Math.PI/2;
-        cardMesh.castShadow = true;
-        cardMesh.receiveShadow = true;
-        return cardMesh;
+        const hoge = new Card(cardGeometry,materialArray)
+        hoge.rotation.x = -Math.PI/2;
+        hoge.castShadow = true;
+        hoge.receiveShadow = true;
+        return hoge;
     };
 
     const AirmanA = genCardImgObj("Airman.jpg");
     AirmanA.position.set(25,1,25);
+    AirmanA.location = "MO";
     scene.add(AirmanA);
 
-    const board :THREE.Object3D[] = [AirmanA];
-    const deck :THREE.Object3D[] = [];
-    const hand :THREE.Object3D[] = [];
+    const cards :Card[] = [AirmanA];
+    const board :Card[] = [AirmanA];
+    const deck :Card[] = [];
+    const hand :Card[] = [];
+    const hopUp :Card[] = [];
 
     for (let i = 0; i < 40; i++) {
-        const card = AirmanA.clone();
+        const card = genCardImgObj("Airman.jpg");
         card.position.set(75, 1+0.2*(deck.length), 50);
         card.rotation.y = Math.PI;
+        cards.push(card);
         deck.push(card);
         scene.add(card);
     };
@@ -133,12 +168,12 @@ window.onload = function() {
         mouse.y = -( y / h ) * 2 + 1;
     };
     
-    const cardDrag = new DragControls( board, camera, renderer.domElement );
-    cardDrag.addEventListener( 'dragstart', function ( event ) { controls.enabled = false; } );
-    cardDrag.addEventListener('drag', (event) => {
-        event.object.position.y = 1;
-    });
-    cardDrag.addEventListener( 'dragend', function ( event ) { controls.enabled = true; } );
+    // const cardDrag = new DragControls( board, camera, renderer.domElement );
+    // cardDrag.addEventListener( 'dragstart', function ( event ) { controls.enabled = false; } );
+    // cardDrag.addEventListener('drag', (event) => {
+    //     event.object.position.y = 1;
+    // });
+    // cardDrag.addEventListener( 'dragend', function ( event ) { controls.enabled = true; } );
 
     const controls = new OrbitControls( camera, renderer.domElement );
     // controls.enabled = false;
@@ -149,43 +184,125 @@ window.onload = function() {
     renderer.domElement.addEventListener("click", onclick, true);
     function onclick(event) {
         raycaster.setFromCamera(mouse, camera);
-        const boardIntersects = raycaster.intersectObjects(board,true); 
-        if (boardIntersects.length > 0) {
-            const selectedObject = boardIntersects[0].object;
-            flipAnimation(selectedObject);
-            console.log(camera.rotation.x)
-        };
-        const deckIntersects = raycaster.intersectObjects(deck,true); 
-        if (deckIntersects.length > 0) {
-            drawCard(1);
-        };
-        const handIntersects = raycaster.intersectObjects(hand,true); 
-        if (handIntersects.length > 0) {
-            const selectedObject = handIntersects[0].object;
-            console.log(selectedObject.rotation.x)
+        const cardIntersects = raycaster.intersectObjects(cards,true); 
+        if (cardIntersects.length > 0) {
+            const selectedCard = cardIntersects[0].object as Card;
+            if(event_isValid(["main","click"])){
+                click_Card[selectedCard.location](selectedCard);
+            }else
+            if(event_isValid(["hopUp","click"])){
+                click_Card.HOPDOWN(selectedCard);
+            };
         };
     };
 
-    const flipAnimation = (Obj:THREE.Object3D) => {
-        Tween.get(Obj.position)
-            .to({y:Obj.position.y+20},250,createjs.Ease.sineIn)
-            .to({y:Obj.position.y},250,createjs.Ease.sineOut);
-        Tween.get(Obj.rotation)
-            .to({y:(-Math.PI-Obj.rotation.y),z:(-Math.PI/2-Obj.rotation.z)},500,createjs.Ease.sineInOut);
+    renderer.domElement.addEventListener("mousemove", mouseMove, true);
+    function mouseMove(event) {
+        if( !(event_isValid(["main","mouseOver"])) ){
+            return
+        };
+        raycaster.setFromCamera(mouse, camera);
+        const cardIntersects = raycaster.intersectObjects(cards,true); 
+        if (cardIntersects.length > 0 ){
+            const selectedCard = cardIntersects[0].object as Card;
+            if(mouseOveredMesh.mesh != selectedCard){
+                console.log("mouseOver");
+                mouseOver_Card[selectedCard.location](selectedCard);
+                if(mouseOveredMesh.mesh instanceof Card){
+                    console.log("mouseOut");
+                    mouseOut_Card[selectedCard.location](mouseOveredMesh.mesh);
+                };
+                mouseOveredMesh.mesh = selectedCard;
+            };
+        }else{
+            if(mouseOveredMesh.mesh instanceof Card){
+                console.log("mouseOut");
+                const targetCard = mouseOveredMesh.mesh as Card;
+                mouseOut_Card[targetCard.location](mouseOveredMesh.mesh);
+                mouseOveredMesh.mesh = "NoMesh";
+            };
+        };
+    };
+
+    const mouseOver_Card = {
+        DECK:(card:Card)=>{},
+        HAND:(card:Card)=>{
+            Tween.get(card.position,{override:true}).to({y:15+10*Math.sqrt(3),z:90+10},100,createjs.Ease.sineIn);
+            Tween.get(card.scale,{override:true}).to({x:1.2,y:1.2},100,createjs.Ease.sineIn)
+        }, 
+        MO:(card:Card)=>{},
+    };
+
+    const mouseOut_Card = {
+        DECK:(card:Card)=>{},
+        HAND:(card:Card)=>{
+            Tween.get(card.position,{override:true}).to({y:15,z:90},100,createjs.Ease.sineIn);
+            Tween.get(card.scale,{override:true}).to({x:1,y:1},100,createjs.Ease.sineIn);
+        },
+        MO:(card:Card)=>{},
+    };
+
+    const click_Card = {
+        DECK:(card:Card)=>{drawCard(1)},
+        HAND:(card:Card)=>{zoomUp(card)},
+        MO:(card:Card)=>{flipAnimation(card)},
+        HOPDOWN:(card:Card)=>{zoomDown(card)},
+    };
+
+    const hopUpBack =  new THREE.Mesh(                                      
+        new THREE.PlaneGeometry(200, 400),
+        new THREE.MeshStandardMaterial({ 
+        color:"black", transparent:true, opacity:0.0
+        })
+    );
+    camera.add(hopUpBack);
+    hopUpBack.visible = false;
+    hopUpBack.position.set(0,0,-60);
+
+
+    const zoomUp = (card:Card) => {
+        eventSwitch_turn(["main"], false);
+        eventSwitch_turn(["hopUp"], true);
+        card.castShadow = false;
+        hopUpBack.visible = true;
+        Tween.get(card.position)
+            .to({x:0, y:150, z:150},250,);
+        Tween.get(card.scale)
+            .to({x:1, y:1, z:1},250,)
+            .call(()=>{
+                Tween.get(hopUpBack.material).to({opacity:0.5},100)
+            });
+    };
+    const zoomDown = async(card:Card) => {
+        Tween.get(hopUpBack.material).to({opacity:0.0},100)
+        await handAdjust();
+        hopUpBack.visible = false;
+        card.castShadow = true;
+        eventSwitch_turn(["main"], true);
+        eventSwitch_turn(["hopUp"], false);
+    };
+
+    const flipAnimation = (card:Card) => {
+        Tween.get(card.position)
+            .to({y:card.position.y+20},250,createjs.Ease.sineIn)
+            .to({y:card.position.y},250,createjs.Ease.sineOut);
+        Tween.get(card.rotation)
+            .to({y:(-Math.PI-card.rotation.y),z:(-Math.PI/2-card.rotation.z)},500,createjs.Ease.sineInOut);
         return
     };
 
     const drawCard = async(count:number)=>{
-        return new Promise<void>(async(resolve, reject) => {
+        console.log("draw" + count);
+        eventSwitch_turn(["main"], false);
+        await (async () => {
             for (let i = 0; i < count ; i++){
                 const target = deck.pop();
                 hand.push(target);
-                console.log("draw");
-                console.log(hand);
+                target.location = "HAND";
                 await handAdjust();
             };
-            resolve();
-        });
+        })();
+        eventSwitch_turn(["main"], true);
     };
 
     const handAdjust =  () => {
@@ -196,7 +313,7 @@ window.onload = function() {
             const tweenPromise = (()=> {
                 return new Promise((resolve, reject) => {
                     Tween.get(card.rotation)
-                        .to({x:-Math.PI/3,y:0},500,createjs.Ease.sineIn);
+                        .to({x:-Math.PI/4,y:0},500,createjs.Ease.sineIn);
                     Tween.get(card.position)
                     .to({
                         x:leftEndPosition + (cardSize.x+cardSize.margin)*i,
@@ -210,6 +327,8 @@ window.onload = function() {
         });
         return Promise.all(promiseArray);
     };
+
+    console.log(eventSwitch)
 
     tick();
     // 毎フレーム時に実行されるループイベント
